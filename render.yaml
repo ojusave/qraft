@@ -29,7 +29,7 @@ services:
 
 databases:
   - name: qraft-db
-    plan: starter
+    plan: free
     databaseName: qraft
     user: qraft
 
