@@ -30,6 +30,10 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 
 ## Deploy on Render
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ojusave/qraft)
+
+Or manually:
+
 1. Push this repo to GitHub.
 2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
 3. Connect your repo. Render reads `render.yaml` and creates all services automatically.
