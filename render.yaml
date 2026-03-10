@@ -11,11 +11,6 @@ services:
         fromDatabase:
           name: qraft-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: qraft-cache
-          type: kvs
-          property: connectionString
       - key: BASE_URL
         value: https://qraft.onrender.com
 
@@ -38,7 +33,3 @@ databases:
     databaseName: qraft
     user: qraft
 
-kvStores:
-  - name: qraft-cache
-    plan: starter
-    maxmemoryPolicy: allkeys-lru

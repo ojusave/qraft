@@ -9,19 +9,17 @@ import traceback
 
 import psycopg2
 import psycopg2.extras
-import redis
 import qrcode
 import qrcode.constants
 import requests as http_requests
 from PIL import Image
-from fastapi import FastAPI, File, Form, UploadFile, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost:5432/qraft")
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
 PORT = int(os.environ.get("PORT", 8000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -68,14 +66,6 @@ def run_migrations():
     cur.close()
     conn.close()
     logger.info("Migrations complete")
-
-
-# ---------------------------------------------------------------------------
-# Redis helper
-# ---------------------------------------------------------------------------
-
-def get_redis():
-    return redis.from_url(REDIS_URL, decode_responses=True)
 
 
 # ---------------------------------------------------------------------------
@@ -136,19 +126,13 @@ def index():
 
 @app.get("/api/health")
 def health():
-    result = {"status": "ok", "postgres": "ok", "redis": "ok"}
+    result = {"status": "ok", "postgres": "ok"}
     try:
         conn = get_db()
         conn.cursor().execute("SELECT 1")
         conn.close()
     except Exception:
         result["postgres"] = "error"
-        result["status"] = "error"
-    try:
-        r = get_redis()
-        r.ping()
-    except Exception:
-        result["redis"] = "error"
         result["status"] = "error"
     return result
 
@@ -214,13 +198,6 @@ async def create_campaign(request: Request):
         cur.close()
         conn.close()
 
-        # Invalidate cache
-        try:
-            r = get_redis()
-            r.delete("campaigns:recent")
-        except Exception:
-            pass
-
         return {
             "id": str(row["id"]),
             "short_id": row["short_id"],
@@ -239,20 +216,6 @@ async def create_campaign(request: Request):
 
 @app.get("/api/campaigns")
 def list_campaigns():
-    r = None
-    try:
-        r = get_redis()
-        cached = r.get("campaigns:recent")
-        if cached:
-            campaigns = json.loads(cached)
-            # Overlay live scan counts from Redis
-            for c in campaigns:
-                val = r.get(f"campaign:{c['id']}:scans")
-                c["total_scans"] = int(val) if val else c.get("total_scans", 0)
-            return campaigns
-    except Exception:
-        pass
-
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM campaigns ORDER BY created_at DESC")
@@ -262,29 +225,15 @@ def list_campaigns():
 
     campaigns = []
     for row in rows:
-        live_scans = row["total_scans"]
-        if r:
-            try:
-                val = r.get(f"campaign:{row['id']}:scans")
-                if val:
-                    live_scans = int(val)
-            except Exception:
-                pass
         campaigns.append({
             "id": str(row["id"]),
             "short_id": row["short_id"],
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
-            "total_scans": live_scans,
+            "total_scans": row["total_scans"],
             "created_at": row["created_at"].isoformat(),
         })
-
-    if r:
-        try:
-            r.setex("campaigns:recent", 60, json.dumps(campaigns))
-        except Exception:
-            pass
 
     return campaigns
 
@@ -293,72 +242,32 @@ def list_campaigns():
 
 @app.get("/api/campaigns/{campaign_id}/stats")
 def campaign_stats(campaign_id: str):
-    redis_scans = 0
-    try:
-        r = get_redis()
-        val = r.get(f"campaign:{campaign_id}:scans")
-        redis_scans = int(val) if val else 0
-    except Exception:
-        pass
-
-    postgres_scans = 0
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT total_scans FROM campaigns WHERE id = %s", (campaign_id,))
-        row = cur.fetchone()
-        if row:
-            postgres_scans = row[0]
-        cur.close()
-        conn.close()
-    except Exception:
-        pass
-
-    return {"redis_scans": redis_scans, "postgres_scans": postgres_scans}
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT total_scans FROM campaigns WHERE id = %s", (campaign_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    scans = row[0] if row else 0
+    return {"total_scans": scans}
 
 
 # ---- Redirect (scan) ------------------------------------------------------
 
 @app.get("/r/{short_id}")
 def redirect_scan(short_id: str, request: Request):
-    r = None
-    campaign = None
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, url FROM campaigns WHERE short_id = %s", (short_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
 
-    # Try Redis cache first
-    try:
-        r = get_redis()
-        cached = r.get(f"campaign:short:{short_id}")
-        if cached:
-            campaign = json.loads(cached)
-    except Exception:
-        pass
+    if not row:
+        return JSONResponse({"error": "Campaign not found"}, status_code=404)
 
-    # Fallback to Postgres
-    if not campaign:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id, url FROM campaigns WHERE short_id = %s", (short_id,))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if not row:
-            return JSONResponse({"error": "Campaign not found"}, status_code=404)
-        campaign = {"id": str(row["id"]), "url": row["url"]}
-        if r:
-            try:
-                r.setex(f"campaign:short:{short_id}", 300, json.dumps(campaign))
-            except Exception:
-                pass
-
-    campaign_id = campaign["id"]
-    dest_url = campaign["url"]
-
-    # Increment Redis counter atomically
-    try:
-        if r:
-            r.incr(f"campaign:{campaign_id}:scans")
-    except Exception:
-        pass
+    campaign_id = str(row["id"])
+    dest_url = row["url"]
 
     # Write scan event + update total in Postgres
     user_agent = request.headers.get("user-agent", "")

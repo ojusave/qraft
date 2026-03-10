@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
 psycopg2-binary
-redis
 qrcode[pil]
 Pillow
 requests
