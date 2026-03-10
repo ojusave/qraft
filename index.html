@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QRaft — QR Campaign Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Roboto:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: rgb(13,13,13);
+    --bg-card: rgb(22,22,22);
+    --bg-input: rgb(30,30,30);
+    --border: rgb(38,38,38);
+    --border-hover: rgb(60,60,60);
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --primary: #a855f7;
+    --primary-hover: #9333ea;
+    --secondary: #facc15;
+    --destructive: #ef4444;
+    --success: #14b8a6;
+    --ring: rgba(168, 85, 247, 0.3);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* ---- Navigation ---- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 32px;
+    background: rgba(13,13,13,0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-brand {
+    font-family: 'Roboto', sans-serif;
+    font-weight: 300;
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-brand strong { font-weight: 400; color: var(--primary); }
+
+  .nav-actions { display: flex; gap: 8px; }
+
+  /* ---- Buttons (DDS-style) ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: 1px solid transparent;
+    border-radius: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    line-height: 1.4;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    padding: 8px 12px;
+  }
+  .btn-ghost:hover { color: var(--text); }
+
+  .btn-lg {
+    padding: 14px 32px;
+    font-size: 1rem;
+  }
+
+  /* ---- Container ---- */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* ---- Section headings (DDS Roboto Light) ---- */
+  h1, h2, h3 {
+    font-family: 'Roboto', sans-serif;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+  }
+
+  /* ---- Form Card ---- */
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 32px;
+    margin-bottom: 48px;
+  }
+
+  .form-card h2 {
+    font-size: 1.25rem;
+    margin-bottom: 24px;
+    color: var(--text-muted);
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .form-grid .full { grid-column: 1 / -1; }
+
+  .form-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .form-field input[type="text"],
+  .form-field input[type="url"] {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .form-field input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  .form-field input::placeholder { color: var(--text-dim); }
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .file-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px dashed var(--border);
+    border-radius: 0;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .file-label:hover { border-color: var(--primary); color: var(--primary); }
+  .file-label input { display: none; }
+  .file-name { color: var(--secondary); font-size: 0.8rem; }
+
+  .spinner {
+    display: none;
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  .spinner.active { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Badge ---- */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid;
+    border-radius: 0;
+  }
+  .badge-purple { color: var(--primary); border-color: var(--primary); background: rgba(168,85,247,0.1); }
+  .badge-yellow { color: var(--secondary); border-color: var(--secondary); background: rgba(250,204,21,0.1); }
+
+  /* ---- Campaign Grid ---- */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .section-header h2 { font-size: 1.25rem; color: var(--text-muted); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 24px;
+    transition: border-color 0.15s;
+    cursor: pointer;
+  }
+  .card:hover { border-color: var(--primary); }
+
+  .card-qr {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    background: #ffffff;
+    margin-bottom: 16px;
+  }
+  .card-qr img {
+    width: 200px;
+    height: 200px;
+    image-rendering: pixelated;
+  }
+
+  .card-tagline {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 4px;
+  }
+  .card-url {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    word-break: break-all;
+    margin-bottom: 16px;
+  }
+
+  .card-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .scan-count {
+    font-size: 42px;
+    font-weight: 900;
+    color: var(--primary);
+    line-height: 1;
+    transition: transform 0.15s;
+    font-family: 'Inter', sans-serif;
+  }
+  .scan-count.pulse { transform: scale(1.1); }
+  .scan-label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 80px 0;
+    font-size: 1rem;
+  }
+
+  /* ---- Full-Page QR Display ---- */
+  .qr-display {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 40px 24px;
+    text-align: center;
+    background: var(--bg);
+  }
+  .qr-display.active { display: flex; }
+
+  .qr-display .qr-wrapper {
+    background: #ffffff;
+    padding: 24px;
+    margin-bottom: 32px;
+    box-shadow: 0 0 80px rgba(168, 85, 247, 0.15);
+  }
+  .qr-display .qr-wrapper img {
+    width: min(70vw, 500px);
+    height: min(70vw, 500px);
+    image-rendering: pixelated;
+  }
+
+  .qr-display .qr-tagline {
+    font-family: 'Roboto', sans-serif;
+    font-weight: 300;
+    font-size: clamp(1.5rem, 4vw, 2.5rem);
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+
+  .qr-display .qr-url {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    word-break: break-all;
+  }
+
+  .qr-display .qr-live-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .qr-display .qr-live-count {
+    font-size: clamp(48px, 10vw, 96px);
+    font-weight: 900;
+    color: var(--primary);
+    line-height: 1;
+    transition: transform 0.2s;
+    font-family: 'Inter', sans-serif;
+  }
+  .qr-display .qr-live-count.pulse { transform: scale(1.08); }
+  .qr-display .qr-live-label {
+    font-size: 1.2rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .qr-display .back-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+    transition: all 0.15s;
+  }
+  .qr-display .back-link:hover { color: var(--primary); border-color: var(--primary); }
+
+  /* ---- Dashboard wrapper ---- */
+  .dashboard { display: block; }
+  .dashboard.hidden { display: none; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 640px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .nav { padding: 12px 16px; }
+    .container { padding: 24px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== DASHBOARD VIEW ===== -->
+<div class="dashboard" id="dashboardView">
+  <nav class="nav">
+    <a href="/" class="nav-brand">Q<strong>Raft</strong></a>
+    <div class="nav-actions">
+      <span class="badge badge-purple">Live</span>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Create Form -->
+    <div class="form-card">
+      <h2>New Campaign</h2>
+      <form id="createForm">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Destination URL</label>
+            <input type="url" name="url" placeholder="https://render.com/credits" required>
+          </div>
+          <div class="form-field">
+            <label>Tagline</label>
+            <input type="text" name="tagline" placeholder="Get $25 Render Credits" required>
+          </div>
+          <div class="form-field">
+            <label>Logo URL (optional)</label>
+            <input type="url" name="logo_url" placeholder="https://example.com/logo.png">
+          </div>
+        </div>
+        <div class="form-actions">
+          <label class="file-label">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload Logo
+            <input type="file" name="logo_file" accept="image/png,image/jpeg,image/webp,image/gif" id="logoFileInput">
+          </label>
+          <span class="file-name" id="fileName"></span>
+          <div style="flex:1"></div>
+          <div class="spinner" id="spinner"></div>
+          <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">Generate QR</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Campaign Grid -->
+    <div class="section-header">
+      <h2>Campaigns</h2>
+      <span class="badge badge-yellow" id="campaignCount">0 campaigns</span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty-state" id="emptyState">No campaigns yet. Create your first one above.</div>
+  </div>
+</div>
+
+<!-- ===== FULL-PAGE QR DISPLAY ===== -->
+<div class="qr-display" id="qrDisplayView">
+  <div class="qr-wrapper">
+    <img id="qrDisplayImg" src="" alt="QR Code">
+  </div>
+  <div class="qr-tagline" id="qrDisplayTagline"></div>
+  <div class="qr-url" id="qrDisplayUrl"></div>
+  <div class="qr-live-stats">
+    <span class="qr-live-count" id="qrDisplayCount">0</span>
+    <span class="qr-live-label">scans</span>
+  </div>
+  <a href="#" class="back-link" id="qrBackLink">Back to dashboard</a>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const grid = $('#grid');
+const emptyState = $('#emptyState');
+const form = $('#createForm');
+const spinner = $('#spinner');
+const submitBtn = $('#submitBtn');
+const fileInput = $('#logoFileInput');
+const fileName = $('#fileName');
+const campaignCountBadge = $('#campaignCount');
+
+const dashboardView = $('#dashboardView');
+const qrDisplayView = $('#qrDisplayView');
+
+let campaigns = [];
+let pollInterval = null;
+let displayPollInterval = null;
+let currentDisplayCampaign = null;
+
+fileInput.addEventListener('change', () => {
+  fileName.textContent = fileInput.files.length ? fileInput.files[0].name : '';
+});
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ---- View switching ----
+function showDashboard() {
+  dashboardView.classList.remove('hidden');
+  qrDisplayView.classList.remove('active');
+  currentDisplayCampaign = null;
+  if (displayPollInterval) { clearInterval(displayPollInterval); displayPollInterval = null; }
+  history.pushState(null, '', '/');
+}
+
+function showQRDisplay(campaign) {
+  currentDisplayCampaign = campaign;
+  dashboardView.classList.add('hidden');
+  qrDisplayView.classList.add('active');
+
+  $('#qrDisplayImg').src = 'data:image/png;base64,' + campaign.qr_base64;
+  $('#qrDisplayTagline').textContent = campaign.tagline;
+  $('#qrDisplayUrl').textContent = campaign.url;
+  $('#qrDisplayCount').textContent = campaign.total_scans || 0;
+
+  // Poll this campaign's stats on the display page
+  if (displayPollInterval) clearInterval(displayPollInterval);
+  displayPollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/stats`);
+      const data = await res.json();
+      const el = $('#qrDisplayCount');
+      const newCount = data.redis_scans || data.postgres_scans || 0;
+      const oldCount = parseInt(el.textContent) || 0;
+      if (newCount !== oldCount) {
+        el.textContent = newCount;
+        el.classList.add('pulse');
+        setTimeout(() => el.classList.remove('pulse'), 300);
+      }
+    } catch(e) {}
+  }, 2000);
+}
+
+$('#qrBackLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  showDashboard();
+  loadCampaigns();
+});
+
+window.addEventListener('popstate', () => {
+  if (qrDisplayView.classList.contains('active')) {
+    showDashboard();
+    loadCampaigns();
+  }
+});
+
+// ---- Render card ----
+function renderCard(c) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.id = c.id;
+  card.innerHTML = `
+    <div class="card-qr">
+      <img src="data:image/png;base64,${c.qr_base64}" alt="QR Code">
+    </div>
+    <div class="card-tagline">${esc(c.tagline)}</div>
+    <div class="card-url">${esc(c.url)}</div>
+    <div class="card-stats">
+      <span class="scan-count" id="count-${c.id}">${c.total_scans || 0}</span>
+      <span class="scan-label">scans</span>
+    </div>
+  `;
+  card.addEventListener('click', () => showQRDisplay(c));
+  return card;
+}
+
+// ---- Load campaigns ----
+async function loadCampaigns() {
+  try {
+    const res = await fetch('/api/campaigns');
+    campaigns = await res.json();
+    grid.innerHTML = '';
+    if (campaigns.length === 0) {
+      emptyState.style.display = 'block';
+    } else {
+      emptyState.style.display = 'none';
+      campaigns.forEach(c => grid.appendChild(renderCard(c)));
+    }
+    campaignCountBadge.textContent = campaigns.length + ' campaign' + (campaigns.length !== 1 ? 's' : '');
+  } catch (e) {
+    console.error('Failed to load campaigns', e);
+  }
+}
+
+// ---- Poll stats (dashboard) ----
+async function pollStats() {
+  for (const c of campaigns) {
+    try {
+      const res = await fetch(`/api/campaigns/${c.id}/stats`);
+      const data = await res.json();
+      const el = document.getElementById(`count-${c.id}`);
+      if (!el) continue;
+      const newCount = data.redis_scans || data.postgres_scans || 0;
+      const oldCount = parseInt(el.textContent) || 0;
+      if (newCount !== oldCount) {
+        c.total_scans = newCount;
+        el.textContent = newCount;
+        el.classList.add('pulse');
+        setTimeout(() => el.classList.remove('pulse'), 300);
+      }
+    } catch (e) {}
+  }
+}
+
+// ---- Create campaign ----
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitBtn.disabled = true;
+  spinner.classList.add('active');
+
+  const fd = new FormData();
+  fd.append('url', form.url.value);
+  fd.append('tagline', form.tagline.value);
+  if (form.logo_url.value.trim()) fd.append('logo_url', form.logo_url.value.trim());
+  if (fileInput.files.length) fd.append('logo_file', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/api/campaigns', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    const c = await res.json();
+    c.total_scans = 0;
+    campaigns.unshift(c);
+    form.reset();
+    fileName.textContent = '';
+    // Redirect to full-page QR display
+    showQRDisplay(c);
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    submitBtn.disabled = false;
+    spinner.classList.remove('active');
+  }
+});
+
+// ---- Init ----
+loadCampaigns();
+setInterval(pollStats, 3000);
+</script>
+</body>
+</html>

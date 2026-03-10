@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: qraft
+    runtime: python
+    plan: starter
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: qraft-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: qraft-cache
+          type: redis
+          property: connectionString
+      - key: BASE_URL
+        value: https://qraft.onrender.com
+      - key: PORT
+        value: 8000
+
+  - type: cron
+    name: qraft-scan-report
+    runtime: python
+    plan: starter
+    schedule: "0 8 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cron.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: qraft-db
+          property: connectionString
+
+databases:
+  - name: qraft-db
+    plan: starter
+    databaseName: qraft
+    user: qraft
+
+keyValueStores:
+  - name: qraft-cache
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
