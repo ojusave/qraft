@@ -24,7 +24,6 @@ from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 # Config
 # ---------------------------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost:5432/qraft")
-BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000").rstrip("/")
 PORT = int(os.environ.get("PORT", 8000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -230,7 +229,11 @@ async def create_campaign(request: Request):
                 logo_url_str = logo_url
 
         short_id = generate_short_id()
-        qr_b64 = generate_qr(str(url), logo_image)
+        # Build redirect URL from the request's own host so it works on any domain
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("host", request.url.netloc)
+        redirect_url = f"{scheme}://{host}/r/{short_id}"
+        qr_b64 = generate_qr(redirect_url, logo_image)
 
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

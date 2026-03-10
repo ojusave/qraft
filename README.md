@@ -21,7 +21,6 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 4. **Set environment variables** (copy `.env.example` to `.env` and source it, or export directly):
    ```bash
    export DATABASE_URL=postgresql://localhost:5432/qraft
-   export BASE_URL=http://localhost:8000
    ```
 
 5. **Run the app**:
@@ -35,7 +34,6 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 1. Push this repo to GitHub.
 2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
 3. Connect your repo. Render reads `render.yaml` and creates all services automatically.
-4. Update `BASE_URL` in the Render environment to match your web service URL (e.g. `https://qraft.onrender.com`).
 
 ## Services
 

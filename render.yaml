@@ -11,8 +11,6 @@ services:
         fromDatabase:
           name: qraft-db
           property: connectionString
-      - key: BASE_URL
-        value: https://qraft.onrender.com
 
   - type: cron
     name: qraft-scan-report
