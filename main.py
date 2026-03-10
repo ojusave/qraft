@@ -6,9 +6,13 @@ import string
 import random
 import logging
 import traceback
+import threading
+import time
+from collections import defaultdict
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 import qrcode
 import qrcode.constants
 import requests as http_requests
@@ -30,14 +34,56 @@ logger = logging.getLogger("qraft")
 app = FastAPI(title="QRaft")
 
 # ---------------------------------------------------------------------------
-# Database helpers
+# Connection pool
 # ---------------------------------------------------------------------------
+db_pool = None
+
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True
-    return conn
+    return db_pool.getconn()
 
+
+def put_db(conn):
+    db_pool.putconn(conn)
+
+
+# ---------------------------------------------------------------------------
+# In-memory scan counter (flushed to Postgres periodically)
+# ---------------------------------------------------------------------------
+scan_lock = threading.Lock()
+scan_counts = defaultdict(int)       # campaign_id -> pending scan count
+campaign_cache = {}                  # short_id -> {"id": ..., "url": ...}
+campaign_cache_lock = threading.Lock()
+
+
+def flush_scans():
+    """Flush accumulated scan counts to Postgres every 5 seconds."""
+    while True:
+        time.sleep(5)
+        with scan_lock:
+            if not scan_counts:
+                continue
+            batch = dict(scan_counts)
+            scan_counts.clear()
+
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            for campaign_id, count in batch.items():
+                cur.execute(
+                    "UPDATE campaigns SET total_scans = total_scans + %s WHERE id = %s",
+                    (count, campaign_id),
+                )
+            conn.commit()
+            cur.close()
+            put_db(conn)
+        except Exception:
+            logger.error(f"Error flushing scans: {traceback.format_exc()}")
+
+
+# ---------------------------------------------------------------------------
+# Database migrations
+# ---------------------------------------------------------------------------
 
 def run_migrations():
     conn = get_db()
@@ -63,8 +109,9 @@ def run_migrations():
             user_agent    TEXT
         );
     """)
+    conn.commit()
     cur.close()
-    conn.close()
+    put_db(conn)
     logger.info("Migrations complete")
 
 
@@ -74,7 +121,13 @@ def run_migrations():
 
 @app.on_event("startup")
 def startup():
+    global db_pool
+    db_pool = psycopg2.pool.ThreadedConnectionPool(2, 20, DATABASE_URL)
     run_migrations()
+    # Start background flush thread
+    t = threading.Thread(target=flush_scans, daemon=True)
+    t.start()
+    logger.info("Scan flush thread started")
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +183,7 @@ def health():
     try:
         conn = get_db()
         conn.cursor().execute("SELECT 1")
-        conn.close()
+        put_db(conn)
     except Exception:
         result["postgres"] = "error"
         result["status"] = "error"
@@ -156,19 +209,15 @@ async def create_campaign(request: Request):
         logo_base64_str = None
         logo_url_str = None
 
-        # Check file upload first — skip entirely if no real file
-        has_file = False
+        # Check file upload first
         if logo_file and hasattr(logo_file, "read"):
             filename = getattr(logo_file, "filename", None) or ""
             content_type = getattr(logo_file, "content_type", None) or ""
-            logger.info(f"logo_file received: filename='{filename}', content_type='{content_type}', type={type(logo_file)}")
             if filename.strip() and content_type in SUPPORTED_IMAGE_TYPES:
                 data = await logo_file.read()
                 if len(data) > 10:
                     logo_image = Image.open(io.BytesIO(data))
                     logo_base64_str = base64.b64encode(data).decode()
-                    has_file = True
-                    logger.info(f"Logo loaded from file upload: {filename} ({len(data)} bytes)")
 
         # Fallback to URL
         if not logo_image and logo_url and str(logo_url).strip():
@@ -179,7 +228,6 @@ async def create_campaign(request: Request):
                 logo_image = Image.open(io.BytesIO(resp.content))
                 logo_base64_str = base64.b64encode(resp.content).decode()
                 logo_url_str = logo_url
-                logger.info(f"Logo loaded from URL: {logo_url}")
 
         short_id = generate_short_id()
         qr_b64 = generate_qr(str(url), logo_image)
@@ -195,8 +243,9 @@ async def create_campaign(request: Request):
             (str(url), logo_url_str, logo_base64_str, str(tagline), qr_b64, short_id),
         )
         row = cur.fetchone()
+        conn.commit()
         cur.close()
-        conn.close()
+        put_db(conn)
 
         return {
             "id": str(row["id"]),
@@ -221,17 +270,21 @@ def list_campaigns():
     cur.execute("SELECT * FROM campaigns ORDER BY created_at DESC")
     rows = cur.fetchall()
     cur.close()
-    conn.close()
+    put_db(conn)
 
     campaigns = []
     for row in rows:
+        # Include any pending in-memory scans in the count
+        pending = 0
+        with scan_lock:
+            pending = scan_counts.get(str(row["id"]), 0)
         campaigns.append({
             "id": str(row["id"]),
             "short_id": row["short_id"],
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
-            "total_scans": row["total_scans"],
+            "total_scans": row["total_scans"] + pending,
             "created_at": row["created_at"].isoformat(),
         })
 
@@ -247,47 +300,39 @@ def campaign_stats(campaign_id: str):
     cur.execute("SELECT total_scans FROM campaigns WHERE id = %s", (campaign_id,))
     row = cur.fetchone()
     cur.close()
-    conn.close()
-    scans = row[0] if row else 0
-    return {"total_scans": scans}
+    put_db(conn)
+    db_scans = row[0] if row else 0
+    with scan_lock:
+        pending = scan_counts.get(campaign_id, 0)
+    return {"total_scans": db_scans + pending}
 
 
 # ---- Redirect (scan) ------------------------------------------------------
 
 @app.get("/r/{short_id}")
 def redirect_scan(short_id: str, request: Request):
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, url FROM campaigns WHERE short_id = %s", (short_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    # Check in-memory cache first
+    with campaign_cache_lock:
+        campaign = campaign_cache.get(short_id)
 
-    if not row:
-        return JSONResponse({"error": "Campaign not found"}, status_code=404)
-
-    campaign_id = str(row["id"])
-    dest_url = row["url"]
-
-    # Write scan event + update total in Postgres
-    user_agent = request.headers.get("user-agent", "")
-    try:
+    if not campaign:
         conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO scan_events (campaign_id, user_agent) VALUES (%s, %s)",
-            (campaign_id, user_agent),
-        )
-        cur.execute(
-            "UPDATE campaigns SET total_scans = total_scans + 1 WHERE id = %s",
-            (campaign_id,),
-        )
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT id, url FROM campaigns WHERE short_id = %s", (short_id,))
+        row = cur.fetchone()
         cur.close()
-        conn.close()
-    except Exception:
-        pass
+        put_db(conn)
+        if not row:
+            return JSONResponse({"error": "Campaign not found"}, status_code=404)
+        campaign = {"id": str(row["id"]), "url": row["url"]}
+        with campaign_cache_lock:
+            campaign_cache[short_id] = campaign
 
-    return RedirectResponse(url=dest_url, status_code=302)
+    # Increment in-memory counter (flushed to Postgres by background thread)
+    with scan_lock:
+        scan_counts[campaign["id"]] += 1
+
+    return RedirectResponse(url=campaign["url"], status_code=302)
 
 
 # ---------------------------------------------------------------------------
