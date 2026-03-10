@@ -4,7 +4,7 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 
 ## Local Setup
 
-1. **Prerequisites**: PostgreSQL and Redis running locally.
+1. **Prerequisites**: PostgreSQL running locally.
 
 2. **Create the database**:
    ```bash
@@ -19,9 +19,7 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 4. **Set environment variables** (copy `.env.example` to `.env` and source it, or export directly):
    ```bash
    export DATABASE_URL=postgresql://localhost:5432/qraft
-   export REDIS_URL=redis://localhost:6379
    export BASE_URL=http://localhost:8000
-   export PORT=8000
    ```
 
 5. **Run the app**:
@@ -34,7 +32,7 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 
 1. Push this repo to GitHub.
 2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
-3. Connect your repo. Render reads `render.yaml` and creates all 4 services automatically.
+3. Connect your repo. Render reads `render.yaml` and creates all services automatically.
 4. Update `BASE_URL` in the Render environment to match your web service URL (e.g. `https://qraft.onrender.com`).
 
 ## Services
@@ -43,5 +41,10 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 |---------|------|-------------|
 | **qraft** | Web | FastAPI app — serves the dashboard and API |
 | **qraft-db** | PostgreSQL | Stores campaigns and scan events |
-| **qraft-cache** | Redis | Caches campaign data and tracks live scan counts |
 | **qraft-scan-report** | Cron | Runs daily at 8 AM, prints a scan report to logs |
+
+## Architecture
+
+- **Connection pooling** via psycopg2 ThreadedConnectionPool (2–20 connections)
+- **In-memory scan counter** batches writes to Postgres every 5 seconds (handles 500+ concurrent scans)
+- **In-memory campaign cache** for fast QR redirect lookups
