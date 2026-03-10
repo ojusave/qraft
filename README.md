@@ -1,5 +1,7 @@
 # QRaft — QR Code Campaign Manager
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ojusave/qraft)
+
 QRaft lets you create QR code campaigns with custom logos and taglines, then track every scan in real time with a live-updating dashboard.
 
 ## Local Setup
@@ -29,10 +31,6 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
    Open http://localhost:8000 in your browser.
 
 ## Deploy on Render
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ojusave/qraft)
-
-Or manually:
 
 1. Push this repo to GitHub.
 2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
