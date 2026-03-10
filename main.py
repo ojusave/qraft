@@ -51,27 +51,36 @@ def put_db(conn):
 # ---------------------------------------------------------------------------
 scan_lock = threading.Lock()
 scan_counts = defaultdict(int)       # campaign_id -> pending scan count
+scan_events = []                     # list of (campaign_id, user_agent) tuples
 campaign_cache = {}                  # short_id -> {"id": ..., "url": ...}
 campaign_cache_lock = threading.Lock()
 
 
 def flush_scans():
-    """Flush accumulated scan counts to Postgres every 5 seconds."""
+    """Flush accumulated scan counts and events to Postgres every 5 seconds."""
     while True:
         time.sleep(5)
         with scan_lock:
-            if not scan_counts:
+            if not scan_counts and not scan_events:
                 continue
-            batch = dict(scan_counts)
+            batch_counts = dict(scan_counts)
+            batch_events = list(scan_events)
             scan_counts.clear()
+            scan_events.clear()
 
         try:
             conn = get_db()
             cur = conn.cursor()
-            for campaign_id, count in batch.items():
+            for campaign_id, count in batch_counts.items():
                 cur.execute(
                     "UPDATE campaigns SET total_scans = total_scans + %s WHERE id = %s",
                     (count, campaign_id),
+                )
+            if batch_events:
+                psycopg2.extras.execute_values(
+                    cur,
+                    "INSERT INTO scan_events (campaign_id, user_agent) VALUES %s",
+                    batch_events,
                 )
             conn.commit()
             cur.close()
@@ -331,9 +340,11 @@ def redirect_scan(short_id: str, request: Request):
         with campaign_cache_lock:
             campaign_cache[short_id] = campaign
 
-    # Increment in-memory counter (flushed to Postgres by background thread)
+    # Buffer scan count + event (flushed to Postgres by background thread)
+    user_agent = request.headers.get("user-agent", "")
     with scan_lock:
         scan_counts[campaign["id"]] += 1
+        scan_events.append((campaign["id"], user_agent))
 
     return RedirectResponse(url=campaign["url"], status_code=302)
 
