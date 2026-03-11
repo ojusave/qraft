@@ -19,31 +19,6 @@ QRaft lets you create QR code campaigns with custom logos and taglines, then tra
 - **Frontend**: Vanilla JS, single-page `index.html` with DDS styling
 - **Hosting**: Render (Blueprint deployment)
 
-## Local Setup
-
-1. **Prerequisites**: PostgreSQL running locally.
-
-2. **Create the database**:
-   ```bash
-   createdb qraft
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Set environment variables** (copy `.env.example` to `.env` and source it, or export directly):
-   ```bash
-   export DATABASE_URL=postgresql://localhost:5432/qraft
-   ```
-
-5. **Run the app**:
-   ```bash
-   python main.py
-   ```
-   Open http://localhost:8000 in your browser.
-
 ## Deploy on Render
 
 Click the **Deploy to Render** button above, or manually:
