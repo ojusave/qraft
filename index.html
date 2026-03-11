@@ -505,7 +505,7 @@ function showQRDisplay(campaign) {
       const res = await fetch(`/api/campaigns/${campaign.id}/stats`);
       const data = await res.json();
       const el = $('#qrDisplayCount');
-      const newCount = data.redis_scans || data.postgres_scans || 0;
+      const newCount = data.total_scans || 0;
       const oldCount = parseInt(el.textContent) || 0;
       if (newCount !== oldCount) {
         el.textContent = newCount;
@@ -575,7 +575,7 @@ async function pollStats() {
       const data = await res.json();
       const el = document.getElementById(`count-${c.id}`);
       if (!el) continue;
-      const newCount = data.redis_scans || data.postgres_scans || 0;
+      const newCount = data.total_scans || 0;
       const oldCount = parseInt(el.textContent) || 0;
       if (newCount !== oldCount) {
         c.total_scans = newCount;
