@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QRaft — QR Campaign Manager</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Roboto:wght@300;400&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -291,6 +292,26 @@
     letter-spacing: 0.05em;
   }
 
+  .btn-delete {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-radius: 0;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+  }
+  .btn-delete:hover { color: var(--destructive); border-color: var(--destructive); }
+
+  .card-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+
   .empty-state {
     text-align: center;
     color: var(--text-dim);
@@ -448,6 +469,7 @@
     <span class="qr-live-label">scans</span>
   </div>
   <a href="#" class="back-link" id="qrBackLink">Back to dashboard</a>
+  <button class="btn-delete" id="qrDeleteBtn" style="margin-top: 16px;">Delete Campaign</button>
 </div>
 
 <script>
@@ -522,6 +544,19 @@ $('#qrBackLink').addEventListener('click', (e) => {
   loadCampaigns();
 });
 
+$('#qrDeleteBtn').addEventListener('click', async () => {
+  if (!currentDisplayCampaign) return;
+  if (!confirm('Delete this campaign?')) return;
+  try {
+    const res = await fetch(`/api/campaigns/${currentDisplayCampaign.id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    showDashboard();
+    loadCampaigns();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+});
+
 window.addEventListener('popstate', () => {
   if (qrDisplayView.classList.contains('active')) {
     showDashboard();
@@ -535,6 +570,9 @@ function renderCard(c) {
   card.className = 'card';
   card.dataset.id = c.id;
   card.innerHTML = `
+    <div class="card-header">
+      <button class="btn-delete" data-id="${c.id}">Delete</button>
+    </div>
     <div class="card-qr">
       <img src="data:image/png;base64,${c.qr_base64}" alt="QR Code">
     </div>
@@ -545,6 +583,17 @@ function renderCard(c) {
       <span class="scan-label">scans</span>
     </div>
   `;
+  card.querySelector('.btn-delete').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm('Delete this campaign?')) return;
+    try {
+      const res = await fetch(`/api/campaigns/${c.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      loadCampaigns();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  });
   card.addEventListener('click', () => showQRDisplay(c));
   return card;
 }

@@ -331,6 +331,44 @@ def campaign_stats(campaign_id: str):
     return {"total_scans": db_scans + pending}
 
 
+# ---- Delete campaign ------------------------------------------------------
+
+@app.delete("/api/campaigns/{campaign_id}")
+def delete_campaign(campaign_id: str):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        # Get short_id to clear cache
+        cur.execute("SELECT short_id FROM campaigns WHERE id = %s", (campaign_id,))
+        row = cur.fetchone()
+        if not row:
+            put_db(conn)
+            return JSONResponse({"error": "Campaign not found"}, status_code=404)
+        short_id = row[0]
+        # Delete scan events first (FK constraint)
+        cur.execute("DELETE FROM scan_events WHERE campaign_id = %s", (campaign_id,))
+        cur.execute("DELETE FROM campaigns WHERE id = %s", (campaign_id,))
+        conn.commit()
+        cur.close()
+        put_db(conn)
+        # Clear from in-memory caches
+        with campaign_cache_lock:
+            campaign_cache.pop(short_id, None)
+        with scan_lock:
+            scan_counts.pop(campaign_id, None)
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting campaign: {traceback.format_exc()}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---- Favicon --------------------------------------------------------------
+
+@app.get("/favicon.png")
+def favicon():
+    return FileResponse(os.path.join(BASE_DIR, "favicon.png"), media_type="image/png")
+
+
 # ---- Redirect (scan) ------------------------------------------------------
 
 @app.get("/r/{short_id}")
