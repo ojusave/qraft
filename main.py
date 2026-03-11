@@ -150,8 +150,20 @@ def generate_short_id(length=8):
     return "".join(random.choices(alphabet, k=length))
 
 
+DEFAULT_LOGO_PATH = os.path.join(BASE_DIR, "default-logo.png")
+
+
+def get_default_logo():
+    """Load the default Render logomark."""
+    if os.path.exists(DEFAULT_LOGO_PATH):
+        return Image.open(DEFAULT_LOGO_PATH)
+    return None
+
+
 def generate_qr(data: str, logo_image=None) -> str:
     """Generate a QR PNG as a base64 string, optionally with a centered logo."""
+    if logo_image is None:
+        logo_image = get_default_logo()
     qr = qrcode.QRCode(
         error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=10,
