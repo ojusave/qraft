@@ -300,8 +300,6 @@ async def create_campaign(request: Request):
             "campaign_url": campaign_url,
             # Open in a browser to see the big QR + stats (same as clicking a campaign card)
             "qr_display_url": qr_display_url,
-            # Backwards compatibility — same value as qr_display_url
-            "page_url": qr_display_url,
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
@@ -342,7 +340,6 @@ def _campaign_to_json(request: Request, row, pending_scans: int):
         "short_id": short_id,
         "campaign_url": campaign_public_url(request, short_id),
         "qr_display_url": display,
-        "page_url": display,
         "qr_base64": row["qr_base64"],
         "url": row["url"],
         "tagline": row["tagline"],
