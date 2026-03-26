@@ -150,11 +150,22 @@ def generate_short_id(length=8):
     return "".join(random.choices(alphabet, k=length))
 
 
-def campaign_public_url(request: Request, short_id: str) -> str:
-    """Full public URL for this app that scans hit before redirecting to the destination."""
+def _request_origin(request: Request) -> tuple[str, str]:
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("host", request.url.netloc)
+    return scheme, host
+
+
+def campaign_public_url(request: Request, short_id: str) -> str:
+    """Full URL that QR codes encode; scans hit /r/ then redirect to the destination."""
+    scheme, host = _request_origin(request)
     return f"{scheme}://{host}/r/{short_id}"
+
+
+def campaign_page_url(request: Request, short_id: str) -> str:
+    """In-app URL that opens the full-screen QR view (/c/) in the SPA."""
+    scheme, host = _request_origin(request)
+    return f"{scheme}://{host}/c/{short_id}"
 
 
 DEFAULT_LOGO_PATH = os.path.join(BASE_DIR, "default-logo.png")
@@ -199,6 +210,12 @@ def generate_qr(data: str, logo_image=None) -> str:
 
 @app.get("/")
 def index():
+    return FileResponse(os.path.join(BASE_DIR, "index.html"), media_type="text/html")
+
+
+@app.get("/c/{short_id}")
+def campaign_spa(short_id: str):
+    """Same SPA as `/`; client reads `/c/{short_id}` and opens that campaign."""
     return FileResponse(os.path.join(BASE_DIR, "index.html"), media_type="text/html")
 
 
@@ -258,6 +275,7 @@ async def create_campaign(request: Request):
 
         short_id = generate_short_id()
         campaign_url = campaign_public_url(request, short_id)
+        qr_display_url = campaign_page_url(request, short_id)
         qr_b64 = generate_qr(campaign_url, logo_image)
 
         conn = get_db()
@@ -278,7 +296,12 @@ async def create_campaign(request: Request):
         return {
             "id": str(row["id"]),
             "short_id": row["short_id"],
+            # Scan / track: encoded in the QR image; hits /r/ then redirects to "url"
             "campaign_url": campaign_url,
+            # Open in a browser to see the big QR + stats (same as clicking a campaign card)
+            "qr_display_url": qr_display_url,
+            # Backwards compatibility — same value as qr_display_url
+            "page_url": qr_display_url,
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
@@ -303,23 +326,45 @@ def list_campaigns(request: Request):
 
     campaigns = []
     for row in rows:
-        # Include any pending in-memory scans in the count
         pending = 0
         with scan_lock:
             pending = scan_counts.get(str(row["id"]), 0)
-        short_id = row["short_id"]
-        campaigns.append({
-            "id": str(row["id"]),
-            "short_id": short_id,
-            "campaign_url": campaign_public_url(request, short_id),
-            "qr_base64": row["qr_base64"],
-            "url": row["url"],
-            "tagline": row["tagline"],
-            "total_scans": row["total_scans"] + pending,
-            "created_at": row["created_at"].isoformat(),
-        })
+        campaigns.append(_campaign_to_json(request, row, pending))
 
     return campaigns
+
+
+def _campaign_to_json(request: Request, row, pending_scans: int):
+    short_id = row["short_id"]
+    display = campaign_page_url(request, short_id)
+    return {
+        "id": str(row["id"]),
+        "short_id": short_id,
+        "campaign_url": campaign_public_url(request, short_id),
+        "qr_display_url": display,
+        "page_url": display,
+        "qr_base64": row["qr_base64"],
+        "url": row["url"],
+        "tagline": row["tagline"],
+        "total_scans": row["total_scans"] + pending_scans,
+        "created_at": row["created_at"].isoformat(),
+    }
+
+
+@app.get("/api/campaigns/by-short/{short_id}")
+def get_campaign_by_short(request: Request, short_id: str):
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM campaigns WHERE short_id = %s", (short_id,))
+    row = cur.fetchone()
+    cur.close()
+    put_db(conn)
+    if not row:
+        return JSONResponse({"error": "Campaign not found"}, status_code=404)
+    pending = 0
+    with scan_lock:
+        pending = scan_counts.get(str(row["id"]), 0)
+    return _campaign_to_json(request, row, pending)
 
 
 # ---- Campaign stats -------------------------------------------------------

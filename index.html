@@ -276,6 +276,14 @@
     opacity: 0.85;
     margin-bottom: 16px;
   }
+  a.card-url.card-scan-link {
+    display: block;
+    text-decoration: none;
+    color: var(--secondary);
+  }
+  a.card-url.card-scan-link:hover {
+    text-decoration: underline;
+  }
 
   .card-stats {
     display: flex;
@@ -471,8 +479,6 @@
     <img id="qrDisplayImg" src="" alt="QR Code">
   </div>
   <div class="qr-tagline" id="qrDisplayTagline"></div>
-  <div class="qr-url" id="qrDisplayCampaignUrl" style="color: var(--secondary); margin-bottom: 8px;"></div>
-  <div class="qr-url" id="qrDisplayUrl"></div>
   <div class="qr-live-stats">
     <span class="qr-live-count" id="qrDisplayCount">0</span>
     <span class="qr-live-label">scans</span>
@@ -510,26 +516,42 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function pathShortId() {
+  const m = location.pathname.match(/^\/c\/([^/]+)\/?$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 // ---- View switching ----
-function showDashboard() {
+function showDashboard(options = {}) {
+  const { skipHistory = false } = options;
   dashboardView.classList.remove('hidden');
   qrDisplayView.classList.remove('active');
   currentDisplayCampaign = null;
   if (displayPollInterval) { clearInterval(displayPollInterval); displayPollInterval = null; }
-  history.pushState(null, '', '/');
+  if (!skipHistory) history.pushState(null, '', '/');
 }
 
-function showQRDisplay(campaign) {
+function showQRDisplay(campaign, options = {}) {
+  const { skipHistory = false } = options;
   currentDisplayCampaign = campaign;
   dashboardView.classList.add('hidden');
   qrDisplayView.classList.add('active');
 
   $('#qrDisplayImg').src = 'data:image/png;base64,' + campaign.qr_base64;
   $('#qrDisplayTagline').textContent = campaign.tagline;
-  const pub = campaign.campaign_url || (location.origin + '/r/' + campaign.short_id);
-  $('#qrDisplayCampaignUrl').textContent = pub;
-  $('#qrDisplayUrl').textContent = '→ ' + campaign.url;
   $('#qrDisplayCount').textContent = campaign.total_scans || 0;
+
+  if (!skipHistory) {
+    history.pushState(
+      { view: 'qr', shortId: campaign.short_id },
+      '',
+      '/c/' + encodeURIComponent(campaign.short_id)
+    );
+  }
 
   // Poll this campaign's stats on the display page
   if (displayPollInterval) clearInterval(displayPollInterval);
@@ -568,15 +590,31 @@ $('#qrDeleteBtn').addEventListener('click', async () => {
   }
 });
 
-window.addEventListener('popstate', () => {
-  if (qrDisplayView.classList.contains('active')) {
-    showDashboard();
+window.addEventListener('popstate', async () => {
+  const sid = pathShortId();
+  if (sid) {
+    let c = campaigns.find((x) => x.short_id === sid);
+    if (!c) {
+      try {
+        const res = await fetch('/api/campaigns/by-short/' + encodeURIComponent(sid));
+        if (res.ok) c = await res.json();
+      } catch (e) {}
+    }
+    if (c) showQRDisplay(c, { skipHistory: true });
+    else {
+      showDashboard({ skipHistory: true });
+      loadCampaigns();
+    }
+  } else {
+    showDashboard({ skipHistory: true });
     loadCampaigns();
   }
 });
 
 // ---- Render card ----
 function renderCard(c) {
+  const viewUrl = c.qr_display_url || c.page_url || (location.origin + '/c/' + c.short_id);
+  const scanUrl = c.campaign_url || (location.origin + '/r/' + c.short_id);
   const card = document.createElement('div');
   card.className = 'card';
   card.dataset.id = c.id;
@@ -588,8 +626,9 @@ function renderCard(c) {
       <img src="data:image/png;base64,${c.qr_base64}" alt="QR Code">
     </div>
     <div class="card-tagline">${esc(c.tagline)}</div>
-    <div class="card-url card-scan-link" title="Public scan link (QR encodes this)">${esc(c.campaign_url || (location.origin + '/r/' + c.short_id))}</div>
-    <div class="card-url card-dest" title="Destination after scan">${esc(c.url)}</div>
+    <a href="${escAttr(viewUrl)}" class="card-url card-scan-link" title="View full QR screen in the app" onclick="event.stopPropagation()">${esc(viewUrl)}</a>
+    <div class="card-url card-dest" title="Encoded in the QR; scan tracking">${esc(scanUrl)}</div>
+    <div class="card-url card-dest" style="opacity:0.75" title="Destination after scan">${esc(c.url)}</div>
     <div class="card-stats">
       <span class="scan-count" id="count-${c.id}">${c.total_scans || 0}</span>
       <span class="scan-label">scans</span>
@@ -678,8 +717,25 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
+async function applyRouteFromUrl() {
+  const sid = pathShortId();
+  if (!sid) return;
+  let c = campaigns.find((x) => x.short_id === sid);
+  if (!c) {
+    try {
+      const res = await fetch('/api/campaigns/by-short/' + encodeURIComponent(sid));
+      if (res.ok) c = await res.json();
+    } catch (e) {}
+  }
+  if (c) showQRDisplay(c, { skipHistory: true });
+  else history.replaceState(null, '', '/');
+}
+
 // ---- Init ----
-loadCampaigns();
+(async () => {
+  await loadCampaigns();
+  await applyRouteFromUrl();
+})();
 setInterval(pollStats, 3000);
 </script>
 </body>
