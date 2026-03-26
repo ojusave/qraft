@@ -150,6 +150,13 @@ def generate_short_id(length=8):
     return "".join(random.choices(alphabet, k=length))
 
 
+def campaign_public_url(request: Request, short_id: str) -> str:
+    """Full public URL for this app that scans hit before redirecting to the destination."""
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("host", request.url.netloc)
+    return f"{scheme}://{host}/r/{short_id}"
+
+
 DEFAULT_LOGO_PATH = os.path.join(BASE_DIR, "default-logo.png")
 
 
@@ -250,11 +257,8 @@ async def create_campaign(request: Request):
                 logo_url_str = logo_url
 
         short_id = generate_short_id()
-        # Build redirect URL from the request's own host so it works on any domain
-        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
-        host = request.headers.get("host", request.url.netloc)
-        redirect_url = f"{scheme}://{host}/r/{short_id}"
-        qr_b64 = generate_qr(redirect_url, logo_image)
+        campaign_url = campaign_public_url(request, short_id)
+        qr_b64 = generate_qr(campaign_url, logo_image)
 
         conn = get_db()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -274,6 +278,7 @@ async def create_campaign(request: Request):
         return {
             "id": str(row["id"]),
             "short_id": row["short_id"],
+            "campaign_url": campaign_url,
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
@@ -288,7 +293,7 @@ async def create_campaign(request: Request):
 # ---- List campaigns -------------------------------------------------------
 
 @app.get("/api/campaigns")
-def list_campaigns():
+def list_campaigns(request: Request):
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM campaigns ORDER BY created_at DESC")
@@ -302,9 +307,11 @@ def list_campaigns():
         pending = 0
         with scan_lock:
             pending = scan_counts.get(str(row["id"]), 0)
+        short_id = row["short_id"]
         campaigns.append({
             "id": str(row["id"]),
-            "short_id": row["short_id"],
+            "short_id": short_id,
+            "campaign_url": campaign_public_url(request, short_id),
             "qr_base64": row["qr_base64"],
             "url": row["url"],
             "tagline": row["tagline"],
